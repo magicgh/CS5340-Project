@@ -1,7 +1,6 @@
 # CS5340 Project
 
 ## UQ_ICL
-
 ### Dependencies
 This code is written in Python. To use it you will need:
 - Numpy - 1.16.2
@@ -20,3 +19,8 @@ There are five datasets, you can test the results of different datasets with usi
 
 Note that the parameter value ranges are hyper-parameters, and different range 
 may result different performance in different dataset, be sure to tune hyper-parameters carefully. 
+
+
+## Instruction Tuning  
+Dataset: [LIMA](https://arxiv.org/abs/2305.11206)  
+Tutorial: [X-Accessory](https://llama2-accessory.readthedocs.io/en/latest/)
