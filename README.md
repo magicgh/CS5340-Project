@@ -11,6 +11,8 @@ pip install -r requirements.txt
 ## Available Models
 * [LLama2-7B](https://huggingface.co/magicgh/lima-llama2_7b)
 * [Gemma-2B](https://huggingface.co/magicgh/lima-gemma_2b)
+* [Mamba-1.4B](https://huggingface.co/HenryCai/mamba-1.4b-hf-lima)
+* [Mamba-2.8B](https://huggingface.co/HenryCai/mamba-2.8b-hf-lima)
 
 ## Parameter Description
 

@@ -18,8 +18,8 @@ torch>=2.1
 mmengine
 xformers
 astunparse==1.6.2
-flash_attn
 datasets
-trl==0.7.11
+trl
 typing_extensions==4.9.0
-mpi4py
+mamba-ssm
+causal-conv1d>=1.2.0

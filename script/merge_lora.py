@@ -8,7 +8,7 @@ def merge_lora_to_base_model(args):
     tokenizer = AutoTokenizer.from_pretrained(
         args.adapter_name_or_path,
         trust_remote_code=True,
-        use_fast=False if config.model_type == 'llama' else True
+        use_fast=False if config.model_type == 'llama' or config.model_type == 'mamba' else True
     )
     model = AutoModelForCausalLM.from_pretrained(
         args.model_name_or_path,
@@ -23,12 +23,13 @@ def merge_lora_to_base_model(args):
 
     tokenizer.save_pretrained(args.save_path)
     model.save_pretrained(args.save_path)
-
+    tokenizer.push_to_hub("mamba-1.4b-hf-lima", config=config)
+    model.push_to_hub("mamba-1.4b-hf-lima", config=config)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--model_name_or_path', type=str, default='google/gemma-2b-it')
-    parser.add_argument('--adapter_name_or_path', type=str, default='./model_output/gemma-2b-sft-qlora')
-    parser.add_argument('--save_path', type=str, default='checkpoints/gemma-2b-sft-qlora-merge')
+    parser.add_argument('--model_name_or_path', type=str, default='state-spaces/mamba-1.4b-hf')
+    parser.add_argument('--adapter_name_or_path', type=str, default='./output/mamba-1.4b-sft-lora')
+    parser.add_argument('--save_path', type=str, default='checkpoints/mamba-1.4b-sft-lora-merge')
     args = parser.parse_args()
     merge_lora_to_base_model(args)

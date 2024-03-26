@@ -30,7 +30,7 @@ import datasets
 from itertools import chain
 from tqdm import tqdm
 import json
-from trl import DPOTrainer, get_kbit_device_map
+from trl import DPOTrainer, get_kbit_device_map, SFTTrainer
 import torch.nn as nn
 
 
@@ -62,7 +62,7 @@ def setup_everything():
     # check some setting
     assert args.task_type in ['pretrain', 'sft', 'dpo'], "task_type should be in ['pretrain', 'sft', 'dpo']"
     assert args.train_mode in ['full', 'lora', 'qlora'], "task_type should be in ['full', 'lora', 'qlora']"
-    assert sum([training_args.fp16, training_args.bf16]) == 1, "only one of fp16 and bf16 can be True"
+    assert sum([training_args.fp16, training_args.bf16]) <= 1, "only one of fp16 and bf16 can be True"
 
     return args, training_args
 
@@ -185,7 +185,7 @@ def load_tokenizer(args):
         args.model_name_or_path,
         trust_remote_code=True,
         # llama不支持fast
-        use_fast=False if config.model_type == 'llama' or config.model_type == 'internlm2' else True
+        use_fast=False if config.model_type == 'llama' or config.model_type == 'internlm2' or config.model_type == 'mamba' else True
     )
 
     # 部分模型的base与chat版本的tokenizer存在差异
@@ -224,6 +224,8 @@ def load_model(args, training_args):
     # todo add flash attention
     # attn_implementation = None
     torch_dtype = torch.float16 if training_args.fp16 else torch.bfloat16
+    # if args.model_name_or_path.lower().startswith('state-spaces/mamba'):
+    #     torch_dtype = torch.float32
     if args.train_mode == 'qlora':
         quantization_config = BitsAndBytesConfig(
             load_in_4bit=True,
@@ -253,7 +255,7 @@ def load_model(args, training_args):
     if args.train_mode == 'qlora' and args.task_type in ['pretrain', 'sft']:
         model = prepare_model_for_kbit_training(model, use_gradient_checkpointing=training_args.gradient_checkpointing)
     # LoRA: Enables the gradients for the input embeddings
-    if args.train_mode == 'lora' and args.task_type in ['pretrain', 'sft']:
+    if args.train_mode == 'lora' and args.task_type in ['pretrain', 'sft'] and not args.model_name_or_path.lower().startswith('state-spaces/mamba'):
         # For backward compatibility
         if hasattr(model, "enable_input_require_grads"):
             model.enable_input_require_grads()
@@ -267,7 +269,10 @@ def load_model(args, training_args):
         peft_config = None
     else:
         # 找到所有需要插入adapter的全连接层
-        target_modules = find_all_linear_names(model, args.train_mode)
+        if args.model_name_or_path.lower().startswith('state-spaces/mamba'):
+            target_modules = ["x_proj", "embeddings", "in_proj", "out_proj"]
+        else:
+            target_modules = find_all_linear_names(model, args.train_mode)
         peft_config = LoraConfig(
             r=args.lora_rank,
             lora_alpha=args.lora_alpha,

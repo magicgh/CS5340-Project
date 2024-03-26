@@ -222,6 +222,16 @@ register_template(
     stop_word='<eos>'
 )
 
+# adopt the same template as zephyr
+register_template(
+    template_name='mamba',
+    system_format='<|system|>\n{content}</s>',
+    user_format='<|user|>\n{content}</s>\n<|assistant|>\n',
+    assistant_format='{content}</s>\n',
+    system=None,
+    stop_word='</s>'
+)
+
 
 # if __name__ == '__main__':
 #     model_name_or_path = ''
