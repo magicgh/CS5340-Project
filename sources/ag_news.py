@@ -36,7 +36,7 @@ def main(model, tokenizer, prompts, training_data, args):
         preds, entropies = uncertainty_calculation(model, tokenizer, prompt, training_data,
                                                    args.decoding_strategy, args.num_demos,
                                                    args.num_demos_per_class, args.sampling_strategy, 
-                                                   args.iter_demos)
+                                                   args.iter_demos, myPrompt=PROMPT_TEMPLATE_1)
         AU, EU = token_uncertainty_calculation_new(preds, entropies)
         print("Aleatoric Uncertainty: {}\t Epistemic Uncertainty: {}".format(AU, EU))
         save_res = {"Question": prompt, "Label": labels[index], "Predicted_Label": preds,
@@ -82,7 +82,7 @@ def post_processing(data, save_path, epochtime, model, sampling_strategy):
 
 if __name__ == '__main__':
     parser.add_argument('--save_path', type=str, default='./LLM_UQ/results/')
-    parser.add_argument('--model', type=str, default='llama-2-7b-chat-hf')
+    parser.add_argument('--model', type=str, default='google/gemma-2b')
     parser.add_argument('--num_demos', type=int, default=5)
     parser.add_argument('--num_demos_per_class', type=int, default=1)
     parser.add_argument('--sampling_strategy', choices=['random', 'class'], default='random')
