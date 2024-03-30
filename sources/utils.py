@@ -1,12 +1,10 @@
 import pandas as pd
 import numpy as np
-from transformers import AutoTokenizer, LlamaForCausalLM
 import torch
 from collections import Counter
 import pickle, re, os, time, random
 import json
-import argparse
-
+from datasets import load_dataset
 
 def get_data(dataset_name='dair-ai/emotion'):
     if dataset_name=='dair-ai/emotion':
@@ -28,7 +26,7 @@ def entropy_calculation(generate_scores):
     return logits
 
 
-def create_demonstrations(dataset, k=6, k_per_class=1, sampling_strategy='random'):
+def create_demonstrations(dataset, k=6, k_per_class=1, sampling_strategy='random',myPrompt=" "):
     if sampling_strategy == 'random':
         examples = []
         for _ in range(k):
@@ -36,7 +34,7 @@ def create_demonstrations(dataset, k=6, k_per_class=1, sampling_strategy='random
             examples.append(dataset[random_index])
     elif sampling_strategy == 'class':
         label_to_texts = {}
-        for text, label in zip(dataset['sentence'], dataset['label']):
+        for text, label in zip(dataset['text'], dataset['label']):
             if label not in label_to_texts:
                 label_to_texts[label] = []
             label_to_texts[label].append(text)
@@ -59,10 +57,10 @@ def create_demonstrations(dataset, k=6, k_per_class=1, sampling_strategy='random
         temp_msg = """### Example {}\nSentence: "{}"\nCategory: {}\n\n""".format(i, x['sentence'], x['label'])
         prompts += temp_msg
     '''
-    prompts = PROMPT_TEMPLATE_1
+    prompts = myPrompt
     for i, x in enumerate(examples):
         temp_msg = """Sentence: "{}" Category: {}\n""".format(x['sentence'], x['label'])
-        prompts = temp_msg + prompts
+        prompts += temp_msg
     return prompts
 
 
@@ -112,11 +110,11 @@ def most_frequent_element(lst):
     return counter.most_common(1)[0][0]
 
 
-def uncertainty_calculation(model, tokenizer, prompt, training_data, decoding_strategies, demo_num=5, demo_per_class=1,
-                            sampling_strategy='class', demo_iter=4):
+def uncertainty_calculation(model, tokenizer, prompt, training_data, decoding_strategies,demo_num=5, demo_per_class=1,
+                            sampling_strategy='class', demo_iter=4, myPrompt=" "):
     answers, entropies = [], []
     for _ in range(demo_iter):
-        demonstrations = create_demonstrations(training_data, demo_num, demo_per_class, sampling_strategy)
+        demonstrations = create_demonstrations(training_data, demo_num, demo_per_class, sampling_strategy, myPrompt=myPrompt)
         test_prompt = tokenizer(create_prompt(prompt, demonstrations), return_tensors="pt")
         temp_answers, temp_entropies = [], []
         for strategy in [decoding_strategies]:

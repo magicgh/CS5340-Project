@@ -1,7 +1,6 @@
-from datasets import load_dataset
 import pandas as pd
 import numpy as np
-from transformers import AutoTokenizer, LlamaForCausalLM
+from transformers import AutoTokenizer, AutoModelForCausalLM
 import torch
 from collections import Counter
 import pickle, re, os, time, random
@@ -22,6 +21,24 @@ Classify the following sentence into three categories: [0: negative, 1: neutral,
 Provide answer in a structured format WITHOUT additional comments, I just want the numerical label for each sentence.
 """
 
+PROMPT_TEMPLATE_2 = f"""
+Your objective is to categorize each of the sentences listed below into one of three predefined sentiment categories, with each category represented by a numerical label as follows:
+- 0: Negative, indicating the sentence conveys a negative or pessimistic sentiment.
+- 1: Neutral, indicating the sentence expresses a sentiment that is neither positive nor negative, suggesting impartiality or a factual stance.
+- 2: Positive, indicating the sentence portrays a positive or optimistic sentiment.
+
+For each sentence, you are required to carefully evaluate the sentiment it expresses and assign the appropriate numerical label that corresponds to the identified sentiment category. It is crucial that your response is formatted to include only the numerical label for the sentiment category of each sentence, omitting any additional commentary, explanations, or extraneous text.
+
+Please ensure your responses are clear and concise, directly mapping each sentence to its sentiment category through the numerical label alone. This streamlined approach is designed to facilitate a straightforward analysis of the sentiments conveyed in the sentences provided.
+
+Example:
+Sentence: 'The weather today is exceptionally beautiful.'
+Response: 2
+
+Proceed with the sentiment classification:
+"""
+
+
 
 def main(model, tokenizer, prompts, training_data, args):
     path = os.path.join(args.save_path, str(int(args.current_time)))
@@ -37,8 +54,11 @@ def main(model, tokenizer, prompts, training_data, args):
         preds, entropies = uncertainty_calculation(model, tokenizer, prompt, training_data,
                                                    args.decoding_strategy, args.num_demos,
                                                    args.num_demos_per_class, args.sampling_strategy, 
-                                                   args.iter_demos)
-        AU, EU = token_uncertainty_calculation_new(preds, entropies)
+                                                   args.iter_demos, myPrompt=PROMPT_TEMPLATE_1)
+        
+        AU, EU = token_uncertainty_calculation_new(preds, entropies, num_classes=3)
+        print("Aleatoric Uncertainty: {}\t Epistemic Uncertainty: {}".format(AU, EU))
+        
         pred = answer_extraction(preds)
         try:
             pred = Counter(pred).most_common()[0][0]
@@ -84,13 +104,13 @@ def post_processing(data, save_path, epochtime, model, sampling_strategy):
     data['EU_new'] = EU_new
     data['Preds'] = preds
     data = data.drop(columns=['Predicted_Label', 'Entropies'])
-    data.to_json('./LLM_UQ/results/' + '{}/{}_financial_{}.json'.format(int(epochtime), 
+    data.to_json('/root/autodl-tmp/results/' + '{}/{}_financial_{}.json'.format(int(epochtime), 
                 model, sampling_strategy), orient="records")
 
 
 if __name__ == '__main__':
-    parser.add_argument('--save_path', type=str, default='./LLM_UQ/results/')
-    parser.add_argument('--model', type=str, default='7b')
+    parser.add_argument('--save_path', type=str, default='/root/autodl-tmp/results/')
+    parser.add_argument('--model', type=str, default='google/gemma-2b')
     parser.add_argument('--num_demos', type=int, default=5)
     parser.add_argument('--num_demos_per_class', type=int, default=1)
     parser.add_argument('--sampling_strategy', choices=['random', 'class'], default='random')
@@ -105,11 +125,11 @@ if __name__ == '__main__':
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     # Loading Model
-    model_path = './llama-2-{}-chat-hf'.format(args.model)
+    model_path = args.model
     if args.load8bits:
-        model = LlamaForCausalLM.from_pretrained(model_path, device_map="auto", torch_dtype='auto', load_in_8bit=True)
+        model = AutoModelForCausalLM.from_pretrained(model_path, device_map="auto", torch_dtype='auto', load_in_8bit=True)
     else:
-        model = LlamaForCausalLM.from_pretrained(model_path, device_map="auto", torch_dtype="auto")
+        model = AutoModelForCausalLM.from_pretrained(model_path, device_map="auto", torch_dtype="auto")
     tokenizer = AutoTokenizer.from_pretrained(model_path)
     print("Done! Loaded Model: {}".format(args.model))
 
@@ -125,6 +145,6 @@ if __name__ == '__main__':
         data = main(model, tokenizer, prompts[args.resume_from + 1:], training_data, args)
     
     data = pd.DataFrame(data)
-    data.to_json('/mnt/dsss_data/cling/LLM_UQ/results/' + '{}/{}_financial_{}.json'.format(int(args.current_time), 
-                args.model, args.sampling_strategy), orient="records")
-    #post_processing(data, args.save_path, args.current_time, args.model, args.sampling_strategy)
+    data.to_json('/root/autodl-tmp/results/' + '{}/{}_financial_{}.json'.format(int(args.current_time), 
+                args.model.split("/")[-1], args.sampling_strategy), orient="records")
+    # post_processing(data, args.save_path, args.current_time, args.model, args.sampling_strategy)

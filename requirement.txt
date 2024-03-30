@@ -1,0 +1,8 @@
+numpy
+scipy
+pandas
+transformers
+datasets
+torch
+accelerate
+bitsandbytes

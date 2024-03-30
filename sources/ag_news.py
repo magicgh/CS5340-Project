@@ -1,7 +1,7 @@
 from datasets import load_dataset
 import pandas as pd
 import numpy as np
-from transformers import AutoTokenizer, LlamaForCausalLM
+from transformers import AutoTokenizer,  AutoModelForCausalLM
 import torch
 from collections import Counter
 import pickle, re, os, time, random
@@ -21,6 +21,22 @@ Classify the topic of the following sentence into four labels: [0: world, 1: spo
 Provide answer in a structured format WITHOUT additional comments, I just want the numerical label for each sentence.
 """
 
+PROMPT_TEMPLATE_2 = f"""
+    Classify the topic of the sentences provided below into four specific categories, each represented by a numerical label:
+    - 0: World
+    - 1: Sports
+    - 2: Business
+    - 3: Sci/Tech
+
+    Your task is to read each sentence and assign the most appropriate category label based on its content. Please format your response to include only the numerical label corresponding to the identified category for each sentence. Do not include additional comments or explanations in your response.
+
+    Example:
+    Sentence: 'The global economy is expected to grow this year.'
+    Response: 2
+
+    Now, proceed with the classification:
+"""
+
 
 def main(model, tokenizer, prompts, training_data, args):
     path = os.path.join(args.save_path, str(int(args.current_time)))
@@ -36,14 +52,21 @@ def main(model, tokenizer, prompts, training_data, args):
         preds, entropies = uncertainty_calculation(model, tokenizer, prompt, training_data,
                                                    args.decoding_strategy, args.num_demos,
                                                    args.num_demos_per_class, args.sampling_strategy, 
-                                                   args.iter_demos)
-        AU, EU = token_uncertainty_calculation_new(preds, entropies)
+                                                   args.iter_demos, myPrompt=PROMPT_TEMPLATE_1)
+        AU, EU = token_uncertainty_calculation_new(preds, entropies, num_classes=4)
         print("Aleatoric Uncertainty: {}\t Epistemic Uncertainty: {}".format(AU, EU))
+        
         save_res = {"Question": prompt, "Label": labels[index], "Predicted_Label": preds,
                     "Entropies": entropies, "AU": AU, "EU": EU}
+        #save_res = {"Question": prompt, "Label": labels[index], "Predicted_Label": preds,
+        #            "Entropies": entropies, "AU": AU, "EU": EU, "AU_new": AU_new, "EU_new": EU_new}
+        save_res = {"Question": prompt, "Label": labels[index], "Predicted_Label": preds,
+                    "AU": AU, "EU": EU}
         data.append(save_res)
-        with open(path + '/{}_agnews.pkl'.format(args.model), 'ab+') as fp:
-            pickle.dump(save_res, fp)
+        
+        
+        # with open(path + '/{}_agnews.pkl'.format(args.model.split("/")[-1]), 'ab+') as fp:
+        #     pickle.dump(save_res, fp)
         if not args.resume_from:
             print("{} of {}, Done".format(index, len(prompts)))
         else:
@@ -76,13 +99,13 @@ def post_processing(data, save_path, epochtime, model, sampling_strategy):
     data['EU_new'] = EU_new
     data['Preds'] = preds
     data = data.drop(columns=['Predicted_Label', 'Entropies'])
-    data.to_json('./LLM_UQ/results/' + '{}/{}_agnews_{}.json'.format(int(epochtime), 
+    data.to_json('/root/autodl-tmp/results/' + '{}/{}_agnews_{}.json'.format(int(epochtime), 
                 model, sampling_strategy), orient="records")
 
 
 if __name__ == '__main__':
-    parser.add_argument('--save_path', type=str, default='./LLM_UQ/results/')
-    parser.add_argument('--model', type=str, default='llama-2-7b-chat-hf')
+    parser.add_argument('--save_path', type=str, default='/root/autodl-tmp/results/')
+    parser.add_argument('--model', type=str, default='google/gemma-2b')
     parser.add_argument('--num_demos', type=int, default=5)
     parser.add_argument('--num_demos_per_class', type=int, default=1)
     parser.add_argument('--sampling_strategy', choices=['random', 'class'], default='random')
@@ -100,9 +123,9 @@ if __name__ == '__main__':
     # Loading Model
     model_path = args.model
     if args.load8bits:
-        model = LlamaForCausalLM.from_pretrained(model_path, device_map="auto", torch_dtype='auto', load_in_8bit=True)
+        model =  AutoModelForCausalLM.from_pretrained(model_path, device_map="auto", torch_dtype='auto', load_in_8bit=True)
     else:
-        model = LlamaForCausalLM.from_pretrained(model_path, device_map="auto", torch_dtype="auto")
+        model =  AutoModelForCausalLM.from_pretrained(model_path, device_map="auto", torch_dtype="auto")
     tokenizer = AutoTokenizer.from_pretrained(model_path)
     print("Done! Loaded Model: {}".format(args.model))
 
@@ -116,3 +139,7 @@ if __name__ == '__main__':
         data = main(model, tokenizer, prompts, training_data, args)
     else:
         data = main(model, tokenizer, prompts[args.resume_from + 1:], training_data, args)
+
+    data = pd.DataFrame(data)
+    data.to_json('/root/autodl-tmp/results/' + '{}/{}_financial_{}.json'.format(int(args.current_time), 
+                args.model.split("/")[-1], args.sampling_strategy), orient="records")
