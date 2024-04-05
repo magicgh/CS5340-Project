@@ -1,10 +1,11 @@
 import pandas as pd
 import numpy as np
-from transformers import AutoTokenizer, AutoModelForCausalLM
+from transformers import AutoTokenizer, AutoModelForCausalLM, MambaConfig, MambaForCausalLM
 import torch
 from collections import Counter
 import pickle, re, os, time, random
 import json
+import tarfile
 import argparse
 
 from utils import *
@@ -38,6 +39,7 @@ Response: 2
 Proceed with the sentiment classification:
 """
 
+PROMPT_TEMPLATE = [PROMPT_TEMPLATE_1, PROMPT_TEMPLATE_2]
 
 
 def main(model, tokenizer, prompts, training_data, args):
@@ -50,11 +52,12 @@ def main(model, tokenizer, prompts, training_data, args):
         json.dump(args.__dict__, f, indent=2)
     # Append to the saved path
     data = []
+    print(PROMPT_TEMPLATE[args.prompt_id - 1])
     for index, prompt in enumerate(prompts):
         preds, entropies = uncertainty_calculation(model, tokenizer, prompt, training_data,
                                                    args.decoding_strategy, args.num_demos,
                                                    args.num_demos_per_class, args.sampling_strategy, 
-                                                   args.iter_demos, myPrompt=PROMPT_TEMPLATE_1)
+                                                   args.iter_demos, myPrompt=PROMPT_TEMPLATE[args.prompt_id - 1])
         
         AU, EU = token_uncertainty_calculation_new(preds, entropies, num_classes=3)
         print("Aleatoric Uncertainty: {}\t Epistemic Uncertainty: {}".format(AU, EU))
@@ -120,6 +123,7 @@ if __name__ == '__main__':
     parser.add_argument('--load8bits', default=False, help='load model with 8 bits')
     parser.add_argument('--current_time', type=str, default=time.time())
     parser.add_argument('--resume_from', type=int)
+    parser.add_argument('--prompt_id', type=int)
     args = parser.parse_args()
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -127,10 +131,12 @@ if __name__ == '__main__':
     # Loading Model
     model_path = args.model
     if args.load8bits:
-        model = AutoModelForCausalLM.from_pretrained(model_path, device_map="auto", torch_dtype='auto', load_in_8bit=True)
+        model = MambaForCausalLM.from_pretrained(model_path, device_map="auto", torch_dtype='auto', load_in_8bit=True)
     else:
-        model = AutoModelForCausalLM.from_pretrained(model_path, device_map="auto", torch_dtype="auto")
+        print('load8bits is false')
+        model = MambaForCausalLM.from_pretrained(model_path, device_map="auto", torch_dtype="auto")
     tokenizer = AutoTokenizer.from_pretrained(model_path)
+    model.to(device)
     print("Done! Loaded Model: {}".format(args.model))
 
     # Loading Data
@@ -145,6 +151,9 @@ if __name__ == '__main__':
         data = main(model, tokenizer, prompts[args.resume_from + 1:], training_data, args)
     
     data = pd.DataFrame(data)
-    data.to_json('/root/autodl-tmp/results/' + '{}/{}_financial_{}.json'.format(int(args.current_time), 
-                args.model.split("/")[-1], args.sampling_strategy), orient="records")
+    data.to_json('/root/autodl-tmp/results/' + '{}/{}_financial_{}_prompt{}.json'.format(int(args.current_time), args.model.split("/")[-1], args.sampling_strategy, args.prompt_id), orient="records")
+    tar = tarfile.open('/root/autodl-tmp/results/' + '{}/{}_financial_{}_prompt{}.tar'.format(int(args.current_time), args.model.split("/")[-1], args.sampling_strategy, args.prompt_id),'w')
+    tar.add('/root/autodl-tmp/results/' + '{}/{}_financial_{}_{}.json'.format(int(args.current_time), args.model.split("/")[-1], args.sampling_strategy, args.prompt_id))
+    tar.add('/root/autodl-tmp/results/' + '{}/args.txt'.format(int(args.current_time)))
+    tar.close()
     # post_processing(data, args.save_path, args.current_time, args.model, args.sampling_strategy)

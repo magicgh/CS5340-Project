@@ -4,7 +4,7 @@ import torch
 from collections import Counter
 import pickle, re, os, time, random
 import json
-from datasets import load_dataset
+from datasets import load_dataset, load_from_disk
 
 def get_data(dataset_name='dair-ai/emotion'):
     if dataset_name=='dair-ai/emotion':
@@ -13,7 +13,8 @@ def get_data(dataset_name='dair-ai/emotion'):
         temp_dataset = load_dataset(dataset_name, 'cola')
         return (temp_dataset['train'], temp_dataset['validation'])
     elif dataset_name=='financial_phrasebank':
-        temp_dataset = load_dataset(dataset_name, 'sentences_allagree')['train']
+        #temp_dataset = load_dataset(dataset_name, 'sentences_allagree')['train']
+        temp_dataset = load_from_disk('/root/autodl-tmp/CS5340-Project/datasets/financial_phrasebank/path')['train']
         temp_dataset = temp_dataset.train_test_split(test_size=0.5, shuffle=False) # Train/Test Ratio = 1132/1132
         return (temp_dataset['train'], temp_dataset['test'])
     elif dataset_name=='ag_news':
@@ -71,15 +72,15 @@ def create_prompt(sentence: str, demonstrations: str) -> str:
 
 def answer_generation(model, tokenizer, prompt, decoding_method=None):
     if decoding_method == "beam_search":
-        outputs = model.generate(**prompt, return_dict_in_generate=True, output_scores=True, max_new_tokens=20,
+        outputs = model.generate(**prompt.to(torch.device("cuda" if torch.cuda.is_available() else "cpu")), return_dict_in_generate=True, output_scores=True, max_new_tokens=20,
                                  num_beams=10, num_return_sequences=10, early_stopping=True)
     elif decoding_method == "contrastive":
-        outputs = model.generate(**prompt, return_dict_in_generate=True, output_scores=True, max_new_tokens=8,
+        outputs = model.generate(**prompt.to(torch.device("cuda" if torch.cuda.is_available() else "cpu")), return_dict_in_generate=True, output_scores=True, max_new_tokens=8,
                                  penalty_alpha=0.6)
     elif decoding_method == "greedy":
-        outputs = model.generate(**prompt, return_dict_in_generate=True, output_scores=True, max_new_tokens=8)
+        outputs = model.generate(**prompt.to(torch.device("cuda" if torch.cuda.is_available() else "cpu")), return_dict_in_generate=True, output_scores=True, max_new_tokens=8)
     elif decoding_method == "top_p":
-        outputs = model.generate(**prompt, return_dict_in_generate=True, output_scores=True, max_new_tokens=8, top_k=40,
+        outputs = model.generate(**prompt.to(torch.device("cuda" if torch.cuda.is_available() else "cpu")), return_dict_in_generate=True, output_scores=True, max_new_tokens=8, top_k=40,
                                  top_p=0.8, temperature=0.6)
     generate_scores, generate_ids = outputs.scores, outputs.sequences
     # Calculate average entropy of the batch
@@ -130,7 +131,7 @@ def uncertainty_calculation(model, tokenizer, prompt, training_data, decoding_st
 
 def find_first_number_index(lst):
     for idx, item in enumerate(lst):
-        if item.isdigit():
+        if item.strip().isdigit():
             return idx
     return None
 
@@ -168,7 +169,7 @@ def token_uncertainty_calculation(preds, entropies):
     return AU, TU - AU
 
 
-def token_uncertainty_calculation_new(preds, entropies, num_classes=2):
+def token_uncertainty_calculation_new(preds, entropies, num_classes=4):
     total_token_logits = []
     total_answers = []
     for i in range(len(preds)):
@@ -176,7 +177,7 @@ def token_uncertainty_calculation_new(preds, entropies, num_classes=2):
         _answer_token = []
         for j in range(len(preds[i][0])):
             token_idx = find_first_number_index(preds[i][0][j])
-            if token_idx:
+            if token_idx != None:
                 _temp_token_logits.append(entropies[i][0][j][token_idx])
                 _answer_token.append(preds[i][0][j][token_idx])
             else:
@@ -193,13 +194,14 @@ def token_uncertainty_calculation_new(preds, entropies, num_classes=2):
     for i in range(len(total_answers)):
         prob_demo = np.zeros(num_classes)
         for j in range(len(total_answers[0])):
-            if total_answers[i][j] and int(total_answers[i][j]) < num_classes:
+            if total_answers[i][j] != None and int(total_answers[i][j]) < num_classes:
                 prob_demo[int(total_answers[i][j])] += total[i][j]
         prob_demos.append(torch.from_numpy(prob_demo))
     prob_demos = torch.stack(prob_demos)
     # Total Uncertainty
     # TU = torch.sum(prob_demos, dim=0).softmax(dim=0)
     # TU = -torch.sum(TU * torch.log(TU)).item()
+    prob_demos = prob_demos[torch.any(prob_demos != 0, dim=1)]
     TU = (torch.sum(prob_demos, dim=0) + 10 ** -7)
     TU = TU / torch.sum(TU)
     TU = -torch.sum(TU * torch.log(TU)).item()
