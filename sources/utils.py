@@ -132,7 +132,7 @@ def uncertainty_calculation(model, tokenizer, prompt, training_data, decoding_st
 
 def find_first_number_index(lst):
     for idx, item in enumerate(lst):
-        if item.isdigit():
+        if item.strip().isdigit():
             return idx
     return None
 
@@ -170,7 +170,7 @@ def token_uncertainty_calculation(preds, entropies):
     return AU, TU - AU
 
 
-def token_uncertainty_calculation_new(preds, entropies, num_classes=2):
+def token_uncertainty_calculation_new(preds, entropies, num_classes=4):
     total_token_logits = []
     total_answers = []
     for i in range(len(preds)):
@@ -178,7 +178,7 @@ def token_uncertainty_calculation_new(preds, entropies, num_classes=2):
         _answer_token = []
         for j in range(len(preds[i][0])):
             token_idx = find_first_number_index(preds[i][0][j])
-            if token_idx:
+            if token_idx != None:
                 _temp_token_logits.append(entropies[i][0][j][token_idx])
                 _answer_token.append(preds[i][0][j][token_idx])
             else:
@@ -195,13 +195,14 @@ def token_uncertainty_calculation_new(preds, entropies, num_classes=2):
     for i in range(len(total_answers)):
         prob_demo = np.zeros(num_classes)
         for j in range(len(total_answers[0])):
-            if total_answers[i][j] and int(total_answers[i][j]) < num_classes:
+            if total_answers[i][j] != None and int(total_answers[i][j]) < num_classes:
                 prob_demo[int(total_answers[i][j])] += total[i][j]
         prob_demos.append(torch.from_numpy(prob_demo))
     prob_demos = torch.stack(prob_demos)
     # Total Uncertainty
     # TU = torch.sum(prob_demos, dim=0).softmax(dim=0)
     # TU = -torch.sum(TU * torch.log(TU)).item()
+    prob_demos = prob_demos[torch.any(prob_demos != 0, dim=1)]
     TU = (torch.sum(prob_demos, dim=0) + 10 ** -7)
     TU = TU / torch.sum(TU)
     TU = -torch.sum(TU * torch.log(TU)).item()
