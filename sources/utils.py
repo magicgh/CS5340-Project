@@ -4,7 +4,9 @@ import torch
 from collections import Counter
 import pickle, re, os, time, random
 import json
-from datasets import load_dataset, load_from_disk
+import argparse
+from datasets import load_dataset
+
 
 def get_data(dataset_name='dair-ai/emotion'):
     if dataset_name=='dair-ai/emotion':
@@ -13,8 +15,7 @@ def get_data(dataset_name='dair-ai/emotion'):
         temp_dataset = load_dataset(dataset_name, 'cola')
         return (temp_dataset['train'], temp_dataset['validation'])
     elif dataset_name=='financial_phrasebank':
-        #temp_dataset = load_dataset(dataset_name, 'sentences_allagree')['train']
-        temp_dataset = load_from_disk('/root/autodl-tmp/CS5340-Project/datasets/financial_phrasebank/path')['train']
+        temp_dataset = load_dataset(dataset_name, 'sentences_allagree')['train']
         temp_dataset = temp_dataset.train_test_split(test_size=0.5, shuffle=False) # Train/Test Ratio = 1132/1132
         return (temp_dataset['train'], temp_dataset['test'])
     elif dataset_name=='ag_news':
@@ -27,7 +28,7 @@ def entropy_calculation(generate_scores):
     return logits
 
 
-def create_demonstrations(dataset, k=6, k_per_class=1, sampling_strategy='random',myPrompt=" "):
+def create_demonstrations(dataset, k=6, k_per_class=1, sampling_strategy='random', myPrompt=" "):
     if sampling_strategy == 'random':
         examples = []
         for _ in range(k):
@@ -35,7 +36,7 @@ def create_demonstrations(dataset, k=6, k_per_class=1, sampling_strategy='random
             examples.append(dataset[random_index])
     elif sampling_strategy == 'class':
         label_to_texts = {}
-        for text, label in zip(dataset['text'], dataset['label']):
+        for text, label in zip(dataset['sentence'], dataset['label']):
             if label not in label_to_texts:
                 label_to_texts[label] = []
             label_to_texts[label].append(text)
@@ -72,15 +73,15 @@ def create_prompt(sentence: str, demonstrations: str) -> str:
 
 def answer_generation(model, tokenizer, prompt, decoding_method=None):
     if decoding_method == "beam_search":
-        outputs = model.generate(**prompt.to(torch.device("cuda" if torch.cuda.is_available() else "cpu")), return_dict_in_generate=True, output_scores=True, max_new_tokens=20,
+        outputs = model.generate(**prompt, return_dict_in_generate=True, output_scores=True, max_new_tokens=20,
                                  num_beams=10, num_return_sequences=10, early_stopping=True)
     elif decoding_method == "contrastive":
-        outputs = model.generate(**prompt.to(torch.device("cuda" if torch.cuda.is_available() else "cpu")), return_dict_in_generate=True, output_scores=True, max_new_tokens=8,
+        outputs = model.generate(**prompt, return_dict_in_generate=True, output_scores=True, max_new_tokens=8,
                                  penalty_alpha=0.6)
     elif decoding_method == "greedy":
-        outputs = model.generate(**prompt.to(torch.device("cuda" if torch.cuda.is_available() else "cpu")), return_dict_in_generate=True, output_scores=True, max_new_tokens=8)
+        outputs = model.generate(**prompt, return_dict_in_generate=True, output_scores=True, max_new_tokens=8)
     elif decoding_method == "top_p":
-        outputs = model.generate(**prompt.to(torch.device("cuda" if torch.cuda.is_available() else "cpu")), return_dict_in_generate=True, output_scores=True, max_new_tokens=8, top_k=40,
+        outputs = model.generate(**prompt, return_dict_in_generate=True, output_scores=True, max_new_tokens=8, top_k=40,
                                  top_p=0.8, temperature=0.6)
     generate_scores, generate_ids = outputs.scores, outputs.sequences
     # Calculate average entropy of the batch
@@ -111,7 +112,7 @@ def most_frequent_element(lst):
     return counter.most_common(1)[0][0]
 
 
-def uncertainty_calculation(model, tokenizer, prompt, training_data, decoding_strategies,demo_num=5, demo_per_class=1,
+def uncertainty_calculation(model, tokenizer, prompt, training_data, decoding_strategies, demo_num=5, demo_per_class=1,
                             sampling_strategy='class', demo_iter=4, myPrompt=" "):
     answers, entropies = [], []
     for _ in range(demo_iter):
